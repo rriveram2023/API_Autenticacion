@@ -171,7 +171,7 @@ def obtener_salud_ad() -> dict[str, str | int]:
 
 
 @aplicacion.get("/auth/login")
-def iniciar_login(rd: str = Query(default="/folders/create/browser")) -> RedirectResponse:
+def iniciar_login(rd: str = Query(default="/auth/me")) -> RedirectResponse:
     # Dejamos el inicio de sesion visible como endpoint del servicio de auth.
     return RedirectResponse(url=f"/oauth2/start?{urlencode({'rd': rd})}", status_code=302)
 

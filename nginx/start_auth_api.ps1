@@ -1,7 +1,6 @@
 $ErrorActionPreference = "Stop"
 
 $rutaProyecto = Split-Path -Parent $PSScriptRoot
-$rutaPython = Join-Path $rutaProyecto ".venv\Scripts\python.exe"
 $rutaEnv = Join-Path $rutaProyecto ".env"
 
 function Obtener-Variables-Env {
@@ -24,11 +23,13 @@ function Obtener-Variables-Env {
     return $resultado
 }
 
+$variables = Obtener-Variables-Env -RutaArchivo $rutaEnv
+$rutaPython = if ($variables.ContainsKey("PYTHON_EXE_PATH")) { $variables["PYTHON_EXE_PATH"] } else { Join-Path $rutaProyecto ".venv\Scripts\python.exe" }
+
 if (-not (Test-Path $rutaPython)) {
     throw "No existe el entorno virtual en $rutaPython"
 }
 
-$variables = Obtener-Variables-Env -RutaArchivo $rutaEnv
 $apiHost = if ($variables.ContainsKey("AUTH_API_HOST")) { $variables["AUTH_API_HOST"] } else { "127.0.0.1" }
 $apiPort = if ($variables.ContainsKey("AUTH_API_PORT")) { $variables["AUTH_API_PORT"] } else { "8001" }
 

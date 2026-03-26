@@ -2,7 +2,35 @@ $ErrorActionPreference = "Stop"
 
 $projectRoot = Split-Path -Parent $PSScriptRoot
 $configPath = Join-Path $PSScriptRoot "conf\app.conf"
+$envPath = Join-Path $projectRoot ".env"
+
+function Obtener-Variables-Env {
+    param([string]$RutaArchivo)
+
+    $resultado = @{}
+    if (-not (Test-Path $RutaArchivo)) {
+        return $resultado
+    }
+
+    foreach ($linea in Get-Content -Path $RutaArchivo) {
+        $contenido = $linea.Trim()
+        if (-not $contenido -or $contenido.StartsWith("#") -or -not $contenido.Contains("=")) {
+            continue
+        }
+        $partes = $contenido.Split("=", 2)
+        $resultado[$partes[0].Trim()] = $partes[1].Trim().Trim('"').Trim("'")
+    }
+
+    return $resultado
+}
+
+$variables = Obtener-Variables-Env -RutaArchivo $envPath
+$configuredNginxExe = if ($variables.ContainsKey("NGINX_EXE_PATH")) { $variables["NGINX_EXE_PATH"] } else { "" }
 $localCandidates = @()
+$explicitCandidates = @()
+if ($configuredNginxExe) {
+    $explicitCandidates += $configuredNginxExe
+}
 $localDirect = Join-Path $projectRoot "nginx-bin\nginx.exe"
 if (Test-Path $localDirect) {
     $localCandidates += $localDirect
@@ -12,6 +40,7 @@ $localVersioned = Get-ChildItem -Path (Join-Path $projectRoot "nginx-bin") -Filt
     Select-Object -ExpandProperty FullName
 
 $candidatePaths = @(
+    $explicitCandidates
     $localCandidates
     $localVersioned
     "C:\nginx\nginx.exe"
@@ -22,7 +51,7 @@ $candidatePaths = @(
 $nginxExe = $candidatePaths | Where-Object { Test-Path $_ } | Select-Object -First 1
 
 if (-not $nginxExe) {
-    throw "No se encontro nginx.exe en las rutas esperadas."
+    throw "No se encontro nginx.exe. Configura NGINX_EXE_PATH o coloca el binario en nginx-bin."
 }
 
 New-Item -ItemType Directory -Force -Path (Join-Path $PSScriptRoot "logs") | Out-Null

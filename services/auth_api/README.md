@@ -1,6 +1,6 @@
 # Auth API
 
-Esta carpeta ya esta lista para moverse a un repositorio independiente.
+Servicio FastAPI para autenticacion, sesion, identidad y grupos.
 
 Incluye:
 
@@ -12,3 +12,15 @@ Incluye:
 Punto de entrada:
 
 - `services/auth_api/app.py`
+
+Endpoints:
+
+- `GET /auth/login`
+- `GET /auth/callback`
+- `POST /auth/logout`
+- `GET /auth/session`
+- `GET /auth/me`
+- `GET /auth/groups`
+- `GET /auth/health`
+- `GET /auth/ad-health`
+- `GET /auth/docs`

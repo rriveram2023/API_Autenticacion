@@ -1,118 +1,64 @@
-# Servicio de Login y Folder API
+# nginx para Auth API
 
-Este `nginx` ahora publica dos servicios separados:
+Este directorio contiene la publicacion HTTPS de `API_Autenticacion`.
 
-- `Auth API`: login, callback, sesion, identidad y grupos
-- `Folder API`: creacion de carpetas y endpoint tecnico para automatizacion
+## Componentes
 
-Los dos servicios ya quedaron fisicamente separados para poder moverse a repositorios Git distintos:
+- `nginx/conf/app.conf`: front door principal para `e3display.com`
+- `start_nginx.ps1`: localiza `nginx.exe`, prepara directorios temporales y levanta o recarga la configuracion
+- `start_oauth2_proxy.ps1`: arranca `oauth2-proxy` con proveedor `entra-id`
+- `start_auth_api.ps1`: arranca FastAPI en `127.0.0.1:8001`
+- `start_stack_entra.ps1`: arranque conjunto del stack de autenticacion
 
-- `services/auth_api`
-- `services/folder_api`
+## Runtime esperado
 
-## Dominio y callback
+- `Auth API`: `127.0.0.1:8001`
+- `oauth2-proxy`: `127.0.0.1:4180`
+- `nginx`: `443` publico para `e3display.com`
 
-El certificado y la redirect URI ya no usan `e3os.local`.
+## Flujo HTTP
 
-Valores objetivo:
+- `/oauth2/` se reenvia a `oauth2-proxy`
+- `/oauth2/auth` se usa como subrequest de validacion de sesion
+- `/auth/login` y `/auth/callback` pasan por `Auth API`
+- `/auth/*` queda protegido con `auth_request`
+- `/health` publica la salud basica del backend de autenticacion
 
-- Hostname publico: `e3display.com`
-- Redirect URI en Entra ID: `https://e3display.com/auth/callback`
-- Certificado recomendado en disco:
-  - `nginx/certs/e3display.com.cert`
-  - `nginx/certs/e3display.com.pem`
+## Entra ID
 
-## Arquitectura de runtime
+Variables minimas requeridas en `.env`:
 
-- `oauth2-proxy`: autentica contra Microsoft Entra ID
-- `nginx`: protege rutas y reenvia headers confiables
-- `Auth API`: corre por defecto en `127.0.0.1:8001`
-- `Folder API`: corre por defecto en `127.0.0.1:8002`
-
-## Rutas publicadas
-
-### Auth API
-
-- `GET /auth/login`
-- `GET /auth/callback`
-- `POST /auth/logout`
-- `GET /auth/session`
-- `GET /auth/me`
-- `GET /auth/groups`
-- `GET /auth/health`
-- `GET /auth/ad-health`
-- `GET /auth/docs`
-
-### Folder API
-
-- `GET /folders/create/browser?cod_cliente=TST&proyecto=DEMO&id_proyecto=10002`
-- `POST /folders/create`
-- `POST /folders/create/system`
-- `GET /folders/docs`
-- `GET /health`
-
-## Front door sin MFA
-
-La variante sin MFA sigue siendo un segundo front door del mismo backend logico. Ya hay una plantilla para esa entrada en:
-
-- [app_trusted_network.example.conf](/d:/Archivos_rriveram/Akira/Propuesta_carpetas/nginx/conf/app_trusted_network.example.conf)
-
-Ese template ya separa `Auth API` y `Folder API` y marca `X-Auth-Mfa-Policy=trusted_network`.
-
-## Variables relevantes en `.env`
-
-- `AUTH_API_HOST`
-- `AUTH_API_PORT`
-- `FOLDER_API_HOST`
-- `FOLDER_API_PORT`
-- `NGINX_PUBLIC_HOST=e3display.com`
+- `ENTRA_TENANT_ID`
+- `OAUTH2_PROXY_CLIENT_ID`
+- `OAUTH2_PROXY_CLIENT_SECRET`
+- `OAUTH2_PROXY_COOKIE_SECRET`
 - `OAUTH2_PROXY_REDIRECT_URL=https://e3display.com/auth/callback`
+
+La app registrada en Entra ID debe aceptar exactamente:
+
+- `https://e3display.com/auth/callback`
+
+## TLS
+
+La configuracion actual usa TLS en `443` y fuerza redireccion desde `80`.
+
+Revisa que `nginx/conf/app.conf` apunte al certificado real:
+
+- `ssl_certificate`
+- `ssl_certificate_key`
+
+El `.env.example` tambien expone referencias utiles:
+
 - `TLS_CERT_PATH`
 - `TLS_KEY_PATH`
-- `SYSTEM_API_KEYS`
-- `SQL_BRIDGE_API_URL=https://e3display.com`
-- `SQL_BRIDGE_API_KEY`
+- `PYTHON_EXE_PATH`
+- `NGINX_EXE_PATH`
+- `OAUTH2_PROXY_EXE_PATH`
 
-## Separacion por repositorio
+## Variante trusted network
 
-Si vas a dividir el proyecto en dos repos Git, la base ya esta preparada:
+Existe un ejemplo opcional en `nginx/conf/app_trusted_network.example.conf` para marcar:
 
-- repositorio 1: copiar `services/auth_api`
-- repositorio 2: copiar `services/folder_api`
+- `X-Auth-Mfa-Policy=trusted_network`
 
-Cada carpeta ya tiene su propio:
-
-- `README.md`
-- `requirements.txt`
-- punto de entrada `app.py`
-
-Los archivos de raiz `main.py`, `auth_service.py` y `creacion_carpetas.py` quedaron solo como wrappers de compatibilidad para no romper el stack actual mientras validamos.
-
-## SQL Server
-
-La integracion con SQL Server sigue desacoplada:
-
-- [folder_api_dispatch.sql](/d:/Archivos_rriveram/Akira/Propuesta_carpetas/sql/folder_api_dispatch.sql)
-- [sql_bridge_folder_api.ps1](/d:/Archivos_rriveram/Akira/Propuesta_carpetas/scripts/sql_bridge_folder_api.ps1)
-
-El trigger solo encola y el bridge llama `POST /folders/create/system` con `X-Api-Key`.
-
-## Arranque de pruebas
-
-1. Ajusta `.env` con `e3display.com`.
-2. Coloca el `.cert` y `.pem` en `nginx/certs/`.
-3. Registra en Entra ID la URI `https://e3display.com/auth/callback`.
-4. Levanta el stack:
-
-```powershell
-.\nginx\start_stack_entra.ps1
-```
-
-5. Prueba:
-
-```text
-https://e3display.com/auth/docs
-https://e3display.com/auth/me
-https://e3display.com/folders/docs
-https://e3display.com/folders/create/browser?cod_cliente=TST&proyecto=DEMO&id_proyecto=10002
-```
+Ese archivo sirve como referencia de una segunda entrada con politica distinta, pero este repositorio mantiene como foco el frente principal de autenticacion.

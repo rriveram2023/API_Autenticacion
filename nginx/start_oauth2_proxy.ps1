@@ -159,9 +159,13 @@ function Resolver-WhitelistDomains {
 }
 
 $variables = Obtener-Variables-Env -RutaArchivo $rutaEnv
-$rutaBinario = Get-ChildItem -Path (Join-Path $rutaProyecto "oauth2-proxy-bin") -Recurse -ErrorAction SilentlyContinue |
-    Where-Object { -not $_.PSIsContainer -and $_.Name -eq "oauth2-proxy.exe" } |
-    Select-Object -First 1 -ExpandProperty FullName
+$rutaBinario = if ($variables.ContainsKey("OAUTH2_PROXY_EXE_PATH")) { $variables["OAUTH2_PROXY_EXE_PATH"] } else { "" }
+
+if (-not $rutaBinario) {
+    $rutaBinario = Get-ChildItem -Path (Join-Path $rutaProyecto "oauth2-proxy-bin") -Recurse -ErrorAction SilentlyContinue |
+        Where-Object { -not $_.PSIsContainer -and $_.Name -eq "oauth2-proxy.exe" } |
+        Select-Object -First 1 -ExpandProperty FullName
+}
 
 if (-not $rutaBinario) {
     $rutaBinario = Get-ChildItem -Path (Join-Path $rutaProyecto "oauth2-proxy-bin") -Recurse -ErrorAction SilentlyContinue |
@@ -169,8 +173,8 @@ if (-not $rutaBinario) {
         Select-Object -First 1 -ExpandProperty FullName
 }
 
-if (-not $rutaBinario) {
-    throw "No se encontro el ejecutable de oauth2-proxy en oauth2-proxy-bin."
+if (-not $rutaBinario -or -not (Test-Path $rutaBinario)) {
+    throw "No se encontro el ejecutable de oauth2-proxy. Configura OAUTH2_PROXY_EXE_PATH o coloca el binario en oauth2-proxy-bin."
 }
 
 $tenantId = Obtener-Valor -Variables $variables -Nombre "ENTRA_TENANT_ID"

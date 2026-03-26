@@ -2,7 +2,6 @@ $ErrorActionPreference = "Stop"
 
 $rutaProyecto = Split-Path -Parent $PSScriptRoot
 $rutaAuthApi = Join-Path $PSScriptRoot "start_auth_api.ps1"
-$rutaApiSegura = Join-Path $PSScriptRoot "start_api_proxy.ps1"
 $rutaOauth = Join-Path $PSScriptRoot "start_oauth2_proxy.ps1"
 $rutaNginx = Join-Path $PSScriptRoot "start_nginx.ps1"
 $rutaEnv = Join-Path $rutaProyecto ".env"
@@ -31,10 +30,6 @@ Write-Host "Levantando Auth API en 8001..."
 Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy","Bypass","-File",$rutaAuthApi -WorkingDirectory $rutaProyecto | Out-Null
 Start-Sleep -Seconds 2
 
-Write-Host "Levantando Folder API en 8002..."
-Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy","Bypass","-File",$rutaApiSegura -WorkingDirectory $rutaProyecto | Out-Null
-Start-Sleep -Seconds 2
-
 Write-Host "Levantando oauth2-proxy en 4180..."
 Start-Process -FilePath "powershell.exe" -ArgumentList "-ExecutionPolicy","Bypass","-File",$rutaOauth -WorkingDirectory $rutaProyecto | Out-Null
 Start-Sleep -Seconds 3
@@ -55,9 +50,7 @@ Write-Host ""
 Write-Host "Stack levantado."
 if ($hostPublico) {
     Write-Host "Auth API: ${esquemaPublico}://$hostPublico$sufijoPuerto/auth/docs"
-    Write-Host "Folder API: ${esquemaPublico}://$hostPublico$sufijoPuerto/folders/docs"
 } else {
     Write-Host "Auth API: http://localhost:$puertoNginx/auth/docs"
-    Write-Host "Folder API: http://localhost:$puertoNginx/folders/docs"
 }
 Write-Host "Acceso no autenticado redirige directamente a Entra ID."
