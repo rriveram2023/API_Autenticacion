@@ -9,6 +9,8 @@ Este repo contiene solo el stack de autenticacion:
 - `nginx` como front door HTTPS y proxy inverso
 - scripts de soporte para cookie secret, hosts y validacion TLS
 
+Tambien puede publicar otras APIs FastAPI detras del mismo `nginx`, siempre que confien solo en headers internos reenviados por el proxy.
+
 ## Estructura
 
 - `services/auth_api`: servicio principal de autenticacion y sesion
@@ -34,6 +36,8 @@ Este repo contiene solo el stack de autenticacion:
    - `X-Auth-Mfa-Policy`
    - `X-Internal-Proxy`
 7. `Auth API` expone sesion, identidad y grupos con base en esos headers y, si hace falta, enriquece datos desde AD.
+
+El mismo patron puede reutilizarse para publicar rutas humanas de otros servicios, por ejemplo `folder-api`, sin compartir codigo Python entre repos.
 
 ## Endpoints principales
 
@@ -131,3 +135,133 @@ Todos esos directorios quedan fuera de Git por medio de `.gitignore`.
 - `https://e3display.com/auth/groups`
 - `https://e3display.com/auth/health`
 - `https://e3display.com/auth/ad-health`
+
+## Docker
+
+El repo incluye una ruta de despliegue en contenedores para servidor:
+
+- `Dockerfile`: imagen de `auth-api`
+- `docker-compose.yml`: stack con `auth-api`, `oauth2-proxy` y `nginx`
+- `docker-compose.vm-shared.yml`: variante recomendada para VM compartida sin publicar `443` desde este stack
+- `.env.docker.example`: variables base para despliegue
+- `nginx/conf/app.docker.conf`: configuracion `nginx` para contenedores
+- `nginx/conf/app.docker.shared.conf`: configuracion HTTP interna para VM compartida
+- `docs/arquitectura.md`: diagramas Mermaid de las opciones de despliegue
+
+Flujo recomendado:
+
+1. Copia el archivo de entorno:
+
+```powershell
+Copy-Item .env.docker.example .env.docker
+```
+
+2. Coloca certificados reales en `nginx/certs/`:
+
+- `nginx/certs/fullchain.crt`
+- `nginx/certs/private.key`
+
+3. Completa en `.env.docker`:
+
+- `ENTRA_TENANT_ID`
+- `OAUTH2_PROXY_CLIENT_ID`
+- `OAUTH2_PROXY_CLIENT_SECRET`
+- `OAUTH2_PROXY_COOKIE_SECRET`
+- `OAUTH2_PROXY_REDIRECT_URL`
+- `AD_*` si vas a enriquecer identidad desde LDAP/AD
+
+4. Levanta el stack:
+
+```powershell
+docker compose --env-file .env.docker up -d --build
+```
+
+5. Revisa estado y logs:
+
+```powershell
+docker compose ps
+docker compose logs -f auth-api
+docker compose logs -f oauth2-proxy
+docker compose logs -f nginx
+```
+
+6. Para apagarlo:
+
+```powershell
+docker compose down
+```
+
+Notas:
+
+- En Docker, `nginx` ya no usa rutas Windows ni `127.0.0.1`; usa `auth-api` y `oauth2-proxy` como nombres de servicio.
+- Si el servidor debe consultar AD, el contenedor `auth-api` necesita conectividad de red hacia el dominio y el puerto LDAP correspondiente.
+
+## VM compartida
+
+Para una VM `Windows Server` compartida con mas aplicaciones, la recomendacion es no dejar `80/443` exclusivos a este repo.
+
+Arquitectura recomendada:
+
+- un proxy frontal compartido recibe `80/443`
+- ese proxy maneja TLS y certificados
+- el stack de este repo se publica internamente en `8081`
+- el `nginx` del repo sigue haciendo `auth_request`, integra `oauth2-proxy` y reenvia a `auth-api`
+
+Para levantar esa variante:
+
+```powershell
+docker compose -f docker-compose.vm-shared.yml --env-file .env.docker up -d --build
+```
+
+En ese modo, la URL publica sigue siendo `https://e3display.com`, pero el TLS ya no vive en este compose.
+
+## VS Code Remote SSH
+
+Flujo recomendado para operar y seguir desarrollando sobre la VM:
+
+1. Instala y habilita `OpenSSH Server` en la VM.
+2. Clona el repo en una ruta estable, por ejemplo:
+
+```text
+D:\Repos\API_Autenticacion
+```
+
+3. Abre la VM desde `VS Code Remote SSH`.
+4. Trabaja dentro de esa carpeta remota:
+
+- Git corre en la VM
+- `docker compose` corre en la VM
+- logs, `exec`, `ps` y validaciones ocurren sobre el entorno real
+- Codex debe abrirse en esa misma ventana remota para compartir contexto con el despliegue activo
+
+## TLS
+
+Hay dos opciones validas:
+
+- `TLS dentro del stack`: util para local, laboratorio o una VM dedicada
+- `TLS en proxy frontal compartido`: recomendado para tu VM compartida
+
+La recomendacion para produccion en tu caso es:
+
+- dejar TLS fuera de este compose
+- mantener el `nginx` del repo como proxy interno de autenticacion
+
+Para documentar las dos opciones, consulta:
+
+- `docs/arquitectura.md`
+
+## Integracion con Folder API
+
+`API_Autenticacion` puede proteger y publicar las rutas humanas de `CreacionCarpetasM`:
+
+- `GET /folders/create/browser`
+- `POST /folders/create`
+- `GET /folders/docs`
+- `GET /folders/openapi.json`
+
+En este esquema:
+
+- `folder-api` sigue corriendo como servicio separado
+- `nginx` exige sesion de usuario para las rutas humanas
+- `nginx` reenvia `X-Authenticated-*` y `X-Internal-Proxy`
+- `POST /folders/create/system` queda fuera del flujo humano y sigue siendo tecnico

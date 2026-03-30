@@ -1,0 +1,63 @@
+services:
+  auth-api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: api-autenticacion-auth-api
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    expose:
+      - "8001"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8001/auth/health', timeout=5)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+
+  oauth2-proxy:
+    image: quay.io/oauth2-proxy/oauth2-proxy:v7.14.3
+    container_name: api-autenticacion-oauth2-proxy
+    restart: unless-stopped
+    env_file:
+      - .env.docker
+    command:
+      - --provider=entra-id
+      - --reverse-proxy=true
+      - --set-xauthrequest=true
+      - --pass-user-headers=true
+      - --upstream=static://202
+      - --http-address=0.0.0.0:4180
+      - --redirect-url=${OAUTH2_PROXY_REDIRECT_URL}
+      - --client-id=${OAUTH2_PROXY_CLIENT_ID}
+      - --client-secret=${OAUTH2_PROXY_CLIENT_SECRET}
+      - --cookie-secret=${OAUTH2_PROXY_COOKIE_SECRET}
+      - --cookie-secure=${OAUTH2_PROXY_COOKIE_SECURE}
+      - --cookie-samesite=lax
+      - --session-cookie-minimal=${OAUTH2_PROXY_SESSION_COOKIE_MINIMAL}
+      - --scope=openid profile email
+      - --email-domain=${OAUTH2_PROXY_EMAIL_DOMAIN}
+      - --oidc-issuer-url=https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0
+      - --entra-id-allowed-tenant=${ENTRA_TENANT_ID}
+      - --skip-provider-button=true
+      - --whitelist-domain=${OAUTH2_PROXY_WHITELIST_DOMAINS}
+    expose:
+      - "4180"
+
+  nginx:
+    image: nginx:1.28-alpine
+    container_name: api-autenticacion-nginx
+    restart: unless-stopped
+    depends_on:
+      auth-api:
+        condition: service_started
+      oauth2-proxy:
+        condition: service_started
+    ports:
+      - "8081:80"
+    volumes:
+      - ./nginx/conf/app.docker.shared.conf:/etc/nginx/nginx.conf:ro
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+
