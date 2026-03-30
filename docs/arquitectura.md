@@ -32,3 +32,8 @@ Para una VM Windows Server compartida con varias aplicaciones:
 - mantener `nginx` del repo como proxy de autenticacion y aplicacion
 - operar el repositorio desde `VS Code Remote SSH` sobre la VM
 
+## Como se consume el servicio
+
+- usuarios finales: por la URL publica, por ejemplo `https://e3display.com`
+- proxy frontal compartido: reenvia hacia `http://<host-vm>:8081`
+- otras aplicaciones del ecosistema: integran contra la URL publica o contra el puerto interno, segun si participan en el flujo humano o en la capa de infraestructura

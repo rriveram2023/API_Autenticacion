@@ -147,6 +147,7 @@ El repo incluye una ruta de despliegue en contenedores para servidor:
 - `nginx/conf/app.docker.conf`: configuracion `nginx` para contenedores
 - `nginx/conf/app.docker.shared.conf`: configuracion HTTP interna para VM compartida
 - `docs/arquitectura.md`: diagramas Mermaid de las opciones de despliegue
+- `docs/vm_remote_ssh.md`: guia de acceso remoto a la VM con VS Code
 
 Flujo recomendado:
 
@@ -234,6 +235,10 @@ D:\Repos\API_Autenticacion
 - logs, `exec`, `ps` y validaciones ocurren sobre el entorno real
 - Codex debe abrirse en esa misma ventana remota para compartir contexto con el despliegue activo
 
+Guia detallada:
+
+- `docs/vm_remote_ssh.md`
+
 ## TLS
 
 Hay dos opciones validas:
@@ -249,6 +254,60 @@ La recomendacion para produccion en tu caso es:
 Para documentar las dos opciones, consulta:
 
 - `docs/arquitectura.md`
+
+## Como usa este servicio tu equipo y otras aplicaciones
+
+Que el contenedor este activo no significa que otras aplicaciones “entren” al contenedor directamente. Lo correcto es consumir el servicio publicado por su URL o por el proxy frontal.
+
+Uso humano:
+
+- los usuarios entran por la URL publica, por ejemplo `https://e3display.com`
+- `nginx` y `oauth2-proxy` manejan el login con Entra ID
+- despues el backend expone identidad, sesion y grupos
+
+Uso por otras aplicaciones web:
+
+- otra app puede delegar autenticacion enviando al usuario a las rutas publicadas por este stack
+- tambien puede colocarse detras del mismo proxy frontal y reutilizar el patron `auth_request`
+- esa app no necesita hablar con Docker internamente; consume la URL interna o publica definida en la arquitectura
+
+Uso por otros backends o APIs:
+
+- si necesitan validar una sesion humana, pueden consumir rutas como:
+  - `GET /auth/session`
+  - `GET /auth/me`
+  - `GET /auth/groups`
+- deben hacerlo a traves del frente que preserve cookies o headers de autenticacion del usuario
+
+Uso dentro de la VM compartida:
+
+- el proxy frontal compartido recibe `80/443`
+- reenvia a este stack en `http://<host-vm>:8081`
+- por eso, otras aplicaciones de la misma VM o del mismo entorno deben integrarse contra:
+  - la URL publica `https://e3display.com`, si el flujo es de usuario final
+  - la URL interna del stack, por ejemplo `http://<host-vm>:8081`, si el trafico viene desde el proxy comun o una capa de infraestructura
+
+Regla practica:
+
+- para personas: usa la URL publica
+- para infraestructura compartida en la VM: usa el puerto interno publicado del stack
+- para desarrollo/operacion: entra por `VS Code Remote SSH` y administra el compose remoto
+
+### Lectura operativa
+
+Cuando preguntes "quien consume este servicio", piensa en cuatro clientes distintos:
+
+- navegador del usuario final
+- proxy frontal compartido
+- aplicacion web que delega autenticacion
+- backend que consulta identidad o sesion
+
+Cada uno espera algo distinto:
+
+- navegador: redirecciones a Entra ID, cookies de sesion y respuestas HTML o JSON
+- proxy frontal: un upstream HTTP estable, por ejemplo `http://<host-vm>:8081`
+- app web: una URL publica estable y headers de identidad reenviados por el proxy
+- backend: respuestas JSON como `/auth/session`, `/auth/me` y `/auth/groups`
 
 ## Integracion con Folder API
 
