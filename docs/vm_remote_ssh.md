@@ -175,3 +175,18 @@ Regla practica:
 
 - VM compartida en produccion: certificados fuera del repo y fuera de este compose
 - VM dedicada o laboratorio con TLS interno: certificados en `nginx/certs/` para el compose con `443`
+
+## Cambio de vm-shared a HTTPS directo
+
+Si migras desde `docker-compose.vm-shared.yml` al stack con TLS propio:
+
+```powershell
+docker compose -f docker-compose.vm-shared.yml --env-file .env.docker down
+docker compose -f docker-compose.yml --env-file .env.docker up -d --build
+```
+
+No ejecutes ambas variantes al mismo tiempo:
+
+- reutilizan los mismos nombres de contenedor
+- la variante HTTPS directa necesita `80` y `443`
+- la variante compartida publica `8081` y deja TLS fuera del stack

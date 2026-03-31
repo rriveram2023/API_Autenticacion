@@ -257,7 +257,7 @@ Para documentar las dos opciones, consulta:
 
 ## Como usa este servicio tu equipo y otras aplicaciones
 
-Que el contenedor este activo no significa que otras aplicaciones “entren” al contenedor directamente. Lo correcto es consumir el servicio publicado por su URL o por el proxy frontal.
+Que el contenedor este activo no significa que otras aplicaciones entren al contenedor directamente. Lo correcto es consumir el servicio publicado por su URL o por el proxy frontal.
 
 Uso humano:
 
@@ -324,3 +324,41 @@ En este esquema:
 - `nginx` exige sesion de usuario para las rutas humanas
 - `nginx` reenvia `X-Authenticated-*` y `X-Internal-Proxy`
 - `POST /folders/create/system` queda fuera del flujo humano y sigue siendo tecnico
+
+## Docker con HTTPS directo en la VM
+
+Si quieres que este repo termine TLS por si mismo, usa `docker-compose.yml` en lugar de `docker-compose.vm-shared.yml`.
+
+Requisitos:
+
+- una VM dedicada o una VM donde este stack pueda tomar `80` y `443`
+- certificados reales colocados localmente en `nginx/certs/`
+- estos dos archivos exactos:
+  - `nginx/certs/fullchain.crt`
+  - `nginx/certs/private.key`
+
+Arranque recomendado:
+
+Primero deten la variante `vm-shared` si esta corriendo, porque ambas usan los mismos nombres de contenedor y este modo necesita `80/443`:
+
+```powershell
+docker compose -f docker-compose.vm-shared.yml --env-file .env.docker down
+docker compose -f docker-compose.yml --env-file .env.docker up -d --build
+```
+
+Validacion rapida:
+
+```powershell
+curl.exe -k -sS -i --max-time 10 https://localhost/health
+curl.exe -k -sS -i --max-time 10 https://localhost/auth/health
+curl.exe -k -sS -i --max-time 10 --max-redirs 0 https://localhost/auth/session
+```
+
+Comportamiento esperado:
+
+- `https://localhost/health` responde `200 OK`
+- `https://localhost/auth/health` responde `200 OK`
+- `https://localhost/auth/session` sin sesion responde `302` hacia `/oauth2/start?...`
+- `http://localhost/...` redirige a `https://localhost/...`
+
+Si faltan `fullchain.crt` o `private.key`, `nginx` no podra iniciar en modo HTTPS directo.
