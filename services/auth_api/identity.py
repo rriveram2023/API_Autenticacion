@@ -131,6 +131,7 @@ def consultar_atributos_usuario(*, username: str, directory_config: DirectoryCon
 
 
 def _candidate_username_values(username: str, directory_config: DirectoryConfig) -> list[tuple[str, str]]:
+    # Probamos variantes comunes del usuario para tolerar dominio\\usuario, UPN o solo sAMAccountName.
     usuario = username.strip()
     if not usuario:
         return []
@@ -220,13 +221,14 @@ def resolver_contexto_proxy(
 
     usuario = limpiar_usuario(username)
     if not usuario:
-        raise HTTPException(status_code=401, detail="No hay identidad autenticada en la solicitud proxied.")
+        raise HTTPException(status_code=401, detail="No hay identidad autenticada en la solicitud reenviada por el proxy.")
 
     grupos = normalizar_grupos_desde_header(groups_header)
     correo = (email or "").strip()
     nombre_mostrar = (display_name or "").strip()
 
     if not grupos or not correo or not nombre_mostrar:
+        # Solo consultamos AD cuando el proxy no alcanzo a traer toda la identidad requerida.
         atributos = consultar_atributos_usuario(username=usuario, directory_config=directory_config)
         grupos = grupos or atributos.get("groups", [])
         correo = correo or str(atributos.get("email", "")).strip()
@@ -245,6 +247,7 @@ def resolver_contexto_proxy(
 
 
 def validar_api_key(x_api_key: str | None = Header(default=None, alias="X-Api-Key")) -> str:
+    # Esta validacion sirve para llamadas tecnicas entre servicios y no para sesion humana.
     api_key = (x_api_key or "").strip()
     keys = [valor.strip() for valor in os.getenv("SYSTEM_API_KEYS", "").split(",") if valor.strip()]
     if not keys:

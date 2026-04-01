@@ -1,26 +1,27 @@
-# Auth API
+# API de autenticacion
 
-Servicio FastAPI para autenticacion, sesion, identidad y grupos.
+Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frente de autenticacion.
 
-Incluye:
+## Responsabilidades
 
-- login y callback con Entra ID por medio de `oauth2-proxy`
-- introspeccion de sesion
-- identidad del usuario actual
-- lectura de grupos y enriquecimiento opcional desde AD
+- redirigir login y callback hacia `oauth2-proxy`
+- exponer estado general y salud de AD
+- traducir headers internos del proxy a un contexto de usuario reutilizable
+- enriquecer identidad y grupos desde Active Directory cuando falte informacion en los headers
 
-Punto de entrada:
+## Punto de entrada
 
 - `services/auth_api/app.py`
 
-Endpoints:
+## Endpoints
 
+- `GET /health`
+- `GET /auth/health`
+- `GET /auth/ad-health`
 - `GET /auth/login`
 - `GET /auth/callback`
 - `POST /auth/logout`
 - `GET /auth/session`
 - `GET /auth/me`
 - `GET /auth/groups`
-- `GET /auth/health`
-- `GET /auth/ad-health`
 - `GET /auth/docs`

@@ -1,12 +1,13 @@
-﻿# TLS certs for direct HTTPS mode
+# Certificados TLS para HTTPS directo
 
-Place only the real production certificate files here when using `docker-compose.yml`:
+Usa esta carpeta solo cuando el repo termina TLS por si mismo con `docker-compose.yml`.
+
+Archivos esperados:
 
 - `fullchain.crt`
 - `private.key`
 
-This folder is intentionally kept in the repo only as a placeholder.
-The real certificate contents must stay local on the VM and must not be committed.
+Esta carpeta queda en el repo solo como placeholder.
+El contenido real de los certificados debe permanecer local en la VM y no debe versionarse.
 
-Use this folder only for the direct HTTPS stack.
-For `docker-compose.vm-shared.yml`, TLS must stay in the shared front proxy and this folder is not used.
+Si usas `docker-compose.vm-shared.yml`, TLS vive en el proxy frontal compartido y esta carpeta no participa en el arranque.

@@ -1,12 +1,12 @@
-# nginx para Auth API
+# nginx para API de autenticacion
 
 Este directorio contiene la publicacion HTTPS de `API_Autenticacion`.
 
 ## Componentes
 
-- `nginx/conf/app.conf`: front door principal para `e3display.com`
-- `nginx/conf/app.docker.conf`: front door para despliegue con Docker Compose
-- `nginx/conf/app.docker.shared.conf`: front door HTTP interno para VM compartida detras de un proxy frontal
+- `nginx/conf/app.conf`: proxy de entrada principal para `e3display.com`
+- `nginx/conf/app.docker.conf`: proxy de entrada para despliegue con Docker Compose
+- `nginx/conf/app.docker.shared.conf`: proxy HTTP interno para VM compartida detras de un proxy frontal
 - `start_nginx.ps1`: localiza `nginx.exe`, prepara directorios temporales y levanta o recarga la configuracion
 - `start_oauth2_proxy.ps1`: arranca `oauth2-proxy` con proveedor `entra-id`
 - `start_auth_api.ps1`: arranca FastAPI en `127.0.0.1:8001`
@@ -14,7 +14,7 @@ Este directorio contiene la publicacion HTTPS de `API_Autenticacion`.
 
 ## Runtime esperado
 
-- `Auth API`: `127.0.0.1:8001`
+- `API de autenticacion`: `127.0.0.1:8001`
 - `oauth2-proxy`: `127.0.0.1:4180`
 - `nginx`: `443` publico para `e3display.com`
 
@@ -22,7 +22,7 @@ Este directorio contiene la publicacion HTTPS de `API_Autenticacion`.
 
 - `/oauth2/` se reenvia a `oauth2-proxy`
 - `/oauth2/auth` se usa como subrequest de validacion de sesion
-- `/auth/login` y `/auth/callback` pasan por `Auth API`
+- `/auth/login` y `/auth/callback` pasan por `API de autenticacion`
 - `/auth/*` queda protegido con `auth_request`
 - `/health` publica la salud basica del backend de autenticacion
 

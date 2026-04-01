@@ -19,6 +19,7 @@ MODO_AUTENTICACION_PROXY = "proxy_header"
 
 
 def cargar_variables_entorno_locales() -> None:
+    # Permite ejecutar el servicio localmente sin depender de un cargador externo de .env.
     ruta_env = RUTA_BASE / ".env"
     if not ruta_env.exists():
         return
@@ -51,6 +52,7 @@ def obtener_configuracion() -> dict[str, str]:
 
 cargar_variables_entorno_locales()
 CONFIGURACION = obtener_configuracion()
+# Consolidamos la configuracion de AD una sola vez para reutilizarla en todas las solicitudes.
 DIRECTORY_CONFIG = DirectoryConfig(
     ad_server=CONFIGURACION["servidor_ad"],
     ad_domain=CONFIGURACION["dominio_ad"],
@@ -79,7 +81,7 @@ class RespuestaAuthGroups(BaseModel):
 
 
 aplicacion = FastAPI(
-    title="Authentication API",
+    title="API de Autenticacion",
     version="1.0.0",
     docs_url="/auth/docs",
     openapi_url="/auth/openapi.json",
@@ -108,6 +110,7 @@ def _contexto_humano(
 
 
 def _respuesta_sesion_inactiva() -> RespuestaSesionAuth:
+    # Este contrato evita que el frontend trate la falta de sesion como error tecnico.
     return RespuestaSesionAuth(
         session_active=False,
         username="",
@@ -178,6 +181,7 @@ def iniciar_login(rd: str = Query(default="/auth/me")) -> RedirectResponse:
 
 @aplicacion.get("/auth/callback")
 def callback_login(code: str | None = Query(default=None), state: str | None = Query(default=None)) -> RedirectResponse:
+    # Reenviamos exactamente los parametros que devuelve Entra ID hacia oauth2-proxy.
     parametros: dict[str, str] = {}
     if code:
         parametros["code"] = code
