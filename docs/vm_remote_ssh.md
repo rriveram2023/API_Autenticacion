@@ -133,3 +133,60 @@ cd D:\Repos\API_Autenticacion
 git pull origin main
 docker compose -f docker-compose.vm-shared.yml --env-file .env.docker up -d --build
 ```
+
+## Validacion remota del stack compartido
+
+Una vez levantado el compose recomendado para VM compartida, valida desde la misma sesion remota:
+
+```powershell
+curl.exe -sS -i --max-time 10 http://localhost:8081/health
+curl.exe -sS -i --max-time 10 http://localhost:8081/auth/health
+curl.exe -sS -i --max-time 10 --max-redirs 0 http://localhost:8081/auth/session
+docker compose -f docker-compose.vm-shared.yml --env-file .env.docker logs --tail 50 nginx oauth2-proxy auth-api
+```
+
+Criterio de exito esperado:
+
+- `GET /health` responde `200 OK`
+- `GET /auth/health` responde `200 OK`
+- `GET /auth/session` sin sesion responde `302` hacia `/oauth2/start?...`
+- los logs muestran:
+  - `nginx` publicando en `8081`
+  - `oauth2-proxy` respondiendo `401` en `/oauth2/auth` para usuarios sin sesion
+  - `auth-api` respondiendo `200` en `/health` y `/auth/health`
+
+## TLS y certificados en la VM compartida
+
+Para la variante `docker-compose.vm-shared.yml` recomendada en produccion compartida:
+
+- no copies `key`, `pem` ni certificados dentro de este repo
+- no montes certificados dentro de los contenedores de este stack
+- el TLS debe vivir en el proxy frontal compartido de la VM o de la infraestructura
+- este stack solo debe recibir trafico HTTP interno, por ejemplo `http://<host-vm>:8081`
+
+Solo si cambias a la variante con TLS dentro del stack (`docker-compose.yml`):
+
+- coloca los archivos de certificado en `nginx/certs/`
+- el contenedor `nginx` los monta en `/etc/nginx/certs`
+- el contenedor `auth-api` los monta en `/run/certs`
+- manten esos archivos fuera de Git
+
+Regla practica:
+
+- VM compartida en produccion: certificados fuera del repo y fuera de este compose
+- VM dedicada o laboratorio con TLS interno: certificados en `nginx/certs/` para el compose con `443`
+
+## Cambio de vm-shared a HTTPS directo
+
+Si migras desde `docker-compose.vm-shared.yml` al stack con TLS propio:
+
+```powershell
+docker compose -f docker-compose.vm-shared.yml --env-file .env.docker down
+docker compose -f docker-compose.yml --env-file .env.docker up -d --build
+```
+
+No ejecutes ambas variantes al mismo tiempo:
+
+- reutilizan los mismos nombres de contenedor
+- la variante HTTPS directa necesita `80` y `443`
+- la variante compartida publica `8081` y deja TLS fuera del stack
