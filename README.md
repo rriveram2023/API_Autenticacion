@@ -38,10 +38,10 @@ Este repositorio publica el frente de autenticacion y puede proteger rutas human
 
 Headers internos esperados:
 
-- `X-Authenticated-User`
+- `X-Authenticated-User`: username corporativo limpio, priorizando `preferred_username` y con fallback a correo o claim opaco normalizado
 - `X-Authenticated-Email`
 - `X-Authenticated-Groups`
-- `X-Authenticated-Display-Name`
+- `X-Authenticated-Display-Name`: nombre visible real si esta disponible; si no, username limpio
 - `X-Auth-Mfa-Policy`
 - `X-Internal-Proxy`
 
@@ -56,6 +56,7 @@ Headers internos esperados:
 - `GET /auth/session`
 - `GET /auth/me`
 - `GET /auth/groups`
+- `GET /auth/proxy-identity` (interno para `nginx`)
 - `GET /auth/docs`
 
 ## Variables de entorno importantes
@@ -83,6 +84,11 @@ Headers internos:
 - `IDENTITY_GROUPS_HEADER`
 - `IDENTITY_DISPLAY_NAME_HEADER`
 - `MFA_POLICY_HEADER`
+- `UPSTREAM_USER_HEADER`
+- `UPSTREAM_PREFERRED_USERNAME_HEADER`
+- `UPSTREAM_EMAIL_HEADER`
+- `UPSTREAM_GROUPS_HEADER`
+- `IDENTITY_USERNAME_SOURCE_ORDER`
 
 Active Directory opcional:
 
@@ -207,6 +213,7 @@ En ese escenario:
 - `folder-api` sigue siendo un servicio separado
 - `nginx` exige sesion de usuario para las rutas humanas
 - `nginx` reenvia `X-Authenticated-*` y `X-Internal-Proxy`
+- la normalizacion de identidad ocurre en `auth-api` mediante el endpoint interno `GET /auth/proxy-identity`
 - `POST /folders/create/system` sigue fuera del flujo humano
 
 ## Documentacion complementaria
@@ -215,3 +222,30 @@ En ese escenario:
 - `docs/arquitectura.md`
 - `nginx/README.md`
 - `services/auth_api/README.md`
+## Servicios humanos protegidos reutilizables
+
+Este repo ya puede publicar servicios humanos adicionales detras del mismo patron de autenticacion sin obligarlos a vivir bajo un subpath.
+
+Patron recomendado:
+
+- crear un `upstream` dedicado por servicio
+- exponer un listener limpio y propio en `nginx`
+- proteger `location /` con `auth_request`
+- reenviar al backend los mismos headers `X-Authenticated-*` y `X-Internal-Proxy`
+- evitar subpaths cuando la app destino usa rutas absolutas o genera URLs propias
+
+Primer servicio reusable ya configurado:
+
+- nombre logico: `e3os_entraid`
+- backend local sin Docker: `127.0.0.1:5001`
+- backend en Docker o VM compartida: `host.docker.internal:5001`
+- listener HTTPS directo: `https://e3display.com:4441/`
+- listener interno para VM compartida: `http://<host-vm>:8088/`
+
+Como agregar un segundo servicio:
+
+1. copia el bloque `upstream` y el `server` de `e3os_entraid`
+2. cambia nombre logico y backend
+3. asigna un puerto de listener nuevo
+4. si estas en Docker, publica ese puerto en el `docker-compose` correspondiente
+5. conserva el mismo bloque de headers `X-Authenticated-*` y `X-Internal-Proxy`

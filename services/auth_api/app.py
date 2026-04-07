@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated
 from urllib.parse import urlencode
 
-from fastapi import FastAPI, Header, HTTPException, Query, Request
+from fastapi import FastAPI, Header, HTTPException, Query, Request, Response
 from fastapi.responses import RedirectResponse
 from pydantic import BaseModel
 
@@ -39,6 +39,14 @@ def obtener_configuracion() -> dict[str, str]:
         "encabezado_grupos": os.getenv("IDENTITY_GROUPS_HEADER", "X-Authenticated-Groups"),
         "encabezado_nombre": os.getenv("IDENTITY_DISPLAY_NAME_HEADER", "X-Authenticated-Display-Name"),
         "encabezado_politica_mfa": os.getenv("MFA_POLICY_HEADER", "X-Auth-Mfa-Policy"),
+        "encabezado_upstream_usuario": os.getenv("UPSTREAM_USER_HEADER", "X-Auth-Request-User"),
+        "encabezado_upstream_preferred_username": os.getenv(
+            "UPSTREAM_PREFERRED_USERNAME_HEADER",
+            "X-Auth-Request-Preferred-Username",
+        ),
+        "encabezado_upstream_correo": os.getenv("UPSTREAM_EMAIL_HEADER", "X-Auth-Request-Email"),
+        "encabezado_upstream_grupos": os.getenv("UPSTREAM_GROUPS_HEADER", "X-Auth-Request-Groups"),
+        "username_source_order": os.getenv("IDENTITY_USERNAME_SOURCE_ORDER", "preferred_username,email,user"),
         "dominio_ad": os.getenv("AD_DOMAIN", os.getenv("USERDNSDOMAIN", "")).strip(),
         "dominio_corto_ad": os.getenv("AD_SHORT_DOMAIN", os.getenv("USERDOMAIN", "")).strip(),
         "servidor_ad": os.getenv("AD_SERVER", os.getenv("USERDNSDOMAIN", "")).strip(),
@@ -60,6 +68,11 @@ DIRECTORY_CONFIG = DirectoryConfig(
     ad_search_base=CONFIGURACION["ad_search_base"],
     ad_bind_user=CONFIGURACION["ad_bind_user"],
     ad_bind_password=CONFIGURACION["ad_bind_password"],
+)
+USERNAME_SOURCE_ORDER = tuple(
+    fragmento.strip()
+    for fragmento in CONFIGURACION["username_source_order"].split(",")
+    if fragmento.strip()
 )
 
 
@@ -95,6 +108,7 @@ def _contexto_humano(
     x_authenticated_groups: str | None,
     x_authenticated_display_name: str | None,
     x_auth_mfa_policy: str | None,
+    preferred_username: str | None = None,
 ) -> AuthContext:
     # Esta funcion concentra la traduccion de headers del proxy a un contexto reusable.
     return resolver_contexto_proxy(
@@ -106,6 +120,8 @@ def _contexto_humano(
         mfa_policy=x_auth_mfa_policy,
         auth_mode=MODO_AUTENTICACION_PROXY,
         directory_config=DIRECTORY_CONFIG,
+        preferred_username=preferred_username,
+        username_source_order=USERNAME_SOURCE_ORDER,
     )
 
 
@@ -194,6 +210,38 @@ def callback_login(code: str | None = Query(default=None), state: str | None = Q
 @aplicacion.post("/auth/logout")
 def cerrar_sesion(rd: str = Query(default="/")) -> RedirectResponse:
     return RedirectResponse(url=f"/oauth2/sign_out?{urlencode({'rd': rd})}", status_code=302)
+
+
+@aplicacion.get("/auth/proxy-identity")
+def obtener_identidad_proxy_normalizada(
+    request: Request,
+    x_auth_request_user: Annotated[str | None, Header(alias=CONFIGURACION["encabezado_upstream_usuario"])] = None,
+    x_auth_request_preferred_username: Annotated[
+        str | None,
+        Header(alias=CONFIGURACION["encabezado_upstream_preferred_username"]),
+    ] = None,
+    x_auth_request_email: Annotated[str | None, Header(alias=CONFIGURACION["encabezado_upstream_correo"])] = None,
+    x_auth_request_groups: Annotated[str | None, Header(alias=CONFIGURACION["encabezado_upstream_grupos"])] = None,
+) -> Response:
+    # Este endpoint existe para que nginx normalice una sola vez la identidad y la reenvie a cualquier backend.
+    contexto = _contexto_humano(
+        request,
+        x_auth_request_user,
+        x_auth_request_email,
+        x_auth_request_groups,
+        None,
+        "entra_standard",
+        preferred_username=x_auth_request_preferred_username,
+    )
+    return Response(
+        status_code=204,
+        headers={
+            "X-Identity-Username": contexto.username,
+            "X-Identity-Email": contexto.email,
+            "X-Identity-Groups": ",".join(contexto.groups),
+            "X-Identity-Display-Name": contexto.display_name,
+        },
+    )
 
 
 @aplicacion.get("/auth/session", response_model=RespuestaSesionAuth)

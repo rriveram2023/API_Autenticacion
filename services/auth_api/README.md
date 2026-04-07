@@ -6,7 +6,7 @@ Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frent
 
 - redirigir login y callback hacia `oauth2-proxy`
 - exponer estado general y salud de AD
-- traducir headers internos del proxy a un contexto de usuario reutilizable
+- traducir headers internos del proxy a un contexto de usuario reutilizable`r`n- normalizar un username corporativo limpio a partir de preferred_username, correo o AD
 - enriquecer identidad y grupos desde Active Directory cuando falte informacion en los headers
 
 ## Punto de entrada
@@ -24,4 +24,6 @@ Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frent
 - `GET /auth/session`
 - `GET /auth/me`
 - `GET /auth/groups`
+- GET /auth/proxy-identity (interno para 
+ginx)
 - `GET /auth/docs`

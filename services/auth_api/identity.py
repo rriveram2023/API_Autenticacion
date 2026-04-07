@@ -13,6 +13,7 @@ from ldap3 import ALL, Connection, NTLM, Server
 SEPARADOR_GRUPOS_RE = re.compile(r"[,\n;|]+")
 ENCABEZADO_PROXY_INTERNO = "X-Internal-Proxy"
 VALOR_PROXY_INTERNO = "nginx-local"
+FUENTES_USERNAME_VALIDAS = {"preferred_username", "email", "user"}
 
 
 @dataclass(frozen=True)
@@ -119,7 +120,9 @@ def consultar_atributos_usuario(*, username: str, directory_config: DirectoryCon
                     continue
 
                 entrada = conexion.entries[0]
+                sam_account_name = _entry_value(entrada, "sAMAccountName")
                 return {
+                    "username": sam_account_name,
                     "display_name": _entry_value(entrada, "displayName"),
                     "email": _entry_value(entrada, "mail") or _entry_value(entrada, "userPrincipalName"),
                     "groups": _member_of_to_names(_entry_list(entrada, "memberOf")),
@@ -206,6 +209,76 @@ def _member_of_to_names(member_of_values: list[str]) -> list[str]:
     return grupos
 
 
+def _parsear_orden_fuentes(username_source_order: tuple[str, ...] | list[str] | str | None) -> tuple[str, ...]:
+    if isinstance(username_source_order, str):
+        candidatos = [fragmento.strip() for fragmento in username_source_order.split(",")]
+    elif username_source_order is None:
+        candidatos = []
+    else:
+        candidatos = [str(fragmento).strip() for fragmento in username_source_order]
+
+    orden: list[str] = []
+    for candidato in candidatos:
+        clave = candidato.casefold()
+        if clave not in FUENTES_USERNAME_VALIDAS or clave in orden:
+            continue
+        orden.append(clave)
+
+    if not orden:
+        return ("preferred_username", "email", "user")
+    return tuple(orden)
+
+
+def _normalizar_username_corporativo(valor: str | None) -> str:
+    texto = (valor or "").strip()
+    if not texto:
+        return ""
+    if "\\" in texto:
+        texto = texto.rsplit("\\", 1)[-1]
+    if "@" in texto:
+        texto = texto.split("@", 1)[0]
+    return texto.strip()
+
+
+def _resolver_username_inicial(
+    *,
+    raw_user: str,
+    preferred_username: str,
+    email: str,
+    username_source_order: tuple[str, ...] | list[str] | str | None,
+) -> str:
+    fuentes = {
+        "preferred_username": preferred_username,
+        "email": email,
+        "user": raw_user,
+    }
+    for fuente in _parsear_orden_fuentes(username_source_order):
+        candidato = _normalizar_username_corporativo(fuentes.get(fuente, ""))
+        if candidato:
+            return candidato
+    return ""
+
+
+def _resolver_display_name(
+    *,
+    raw_user: str,
+    username: str,
+    email: str,
+    display_name: str,
+    directory_display_name: str,
+) -> str:
+    nombre_mostrar = (display_name or "").strip()
+    if nombre_mostrar and nombre_mostrar != (raw_user or "").strip():
+        return nombre_mostrar
+    if directory_display_name:
+        return directory_display_name.strip()
+    if username:
+        return username
+    if email:
+        return email
+    return nombre_mostrar
+
+
 def resolver_contexto_proxy(
     *,
     request: Request,
@@ -216,23 +289,45 @@ def resolver_contexto_proxy(
     mfa_policy: str | None,
     auth_mode: str,
     directory_config: DirectoryConfig,
+    preferred_username: str | None = None,
+    username_source_order: tuple[str, ...] | list[str] | str | None = None,
 ) -> AuthContext:
     validar_origen_proxy_local(request)
 
-    usuario = limpiar_usuario(username)
-    if not usuario:
+    usuario_raw = limpiar_usuario(username)
+    preferred_username_limpio = limpiar_usuario(preferred_username)
+    correo = (email or "").strip()
+    if not usuario_raw and not preferred_username_limpio and not correo:
         raise HTTPException(status_code=401, detail="No hay identidad autenticada en la solicitud reenviada por el proxy.")
 
     grupos = normalizar_grupos_desde_header(groups_header)
-    correo = (email or "").strip()
-    nombre_mostrar = (display_name or "").strip()
+    usuario = _resolver_username_inicial(
+        raw_user=usuario_raw,
+        preferred_username=preferred_username_limpio,
+        email=correo,
+        username_source_order=username_source_order,
+    )
+    lookup_value = preferred_username_limpio or correo or usuario or usuario_raw
+    atributos = consultar_atributos_usuario(username=lookup_value, directory_config=directory_config)
 
-    if not grupos or not correo or not nombre_mostrar:
-        # Solo consultamos AD cuando el proxy no alcanzo a traer toda la identidad requerida.
-        atributos = consultar_atributos_usuario(username=usuario, directory_config=directory_config)
-        grupos = grupos or atributos.get("groups", [])
-        correo = correo or str(atributos.get("email", "")).strip()
-        nombre_mostrar = nombre_mostrar or str(atributos.get("display_name", "")).strip()
+    usuario_directorio = limpiar_usuario(str(atributos.get("username", "")))
+    if usuario_directorio:
+        usuario = _normalizar_username_corporativo(usuario_directorio)
+
+    if not usuario:
+        usuario = _normalizar_username_corporativo(usuario_raw)
+    if not usuario:
+        raise HTTPException(status_code=401, detail="No se pudo resolver un username corporativo para la identidad autenticada.")
+
+    grupos = grupos or atributos.get("groups", [])
+    correo = correo or str(atributos.get("email", "")).strip()
+    nombre_mostrar = _resolver_display_name(
+        raw_user=usuario_raw,
+        username=usuario,
+        email=correo,
+        display_name=display_name or "",
+        directory_display_name=str(atributos.get("display_name", "")).strip(),
+    )
 
     return AuthContext(
         username=usuario,
