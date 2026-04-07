@@ -56,6 +56,7 @@ services:
         condition: service_started
     ports:
       - "8081:80"
+      - "8088:8088"
     volumes:
       - ./nginx/conf/app.docker.shared.conf:/etc/nginx/nginx.conf:ro
     extra_hosts:

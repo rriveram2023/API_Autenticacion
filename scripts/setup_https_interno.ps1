@@ -355,7 +355,7 @@ $($bloquesRedirect -join "`r`n")
             proxy_set_header X-Forwarded-Proto `$scheme;
             proxy_set_header X-Forwarded-Host `$http_host;
             proxy_set_header X-Forwarded-Port `$server_port;
-            proxy_set_header X-Auth-Request-Redirect `$request_uri;
+            proxy_set_header X-Auth-Request-Redirect `$scheme://`$http_host`$request_uri;
             proxy_set_header X-Authenticated-User "";
         }
 
@@ -373,7 +373,7 @@ $($bloquesRedirect -join "`r`n")
         }
 
         location @entra_login {
-            return 302 /oauth2/start?rd=`$request_uri;
+            return 302 /oauth2/start?rd=`$scheme://`$http_host`$request_uri;
         }
 
         location / {

@@ -75,3 +75,14 @@ Existe un ejemplo opcional en `nginx/conf/app_trusted_network.example.conf` para
 - `X-Auth-Mfa-Policy=trusted_network`
 
 Ese archivo sirve como referencia de una segunda entrada con politica distinta, pero este repositorio mantiene como foco el frente principal de autenticacion.
+
+## Patron reusable para servicios humanos
+
+El servicio `e3os_entraid` queda como ejemplo base para publicar apps humanas nuevas sin subpath:
+
+- listener HTTPS directo: `4441`
+- listener interno para VM compartida: `8088`
+- backend local: `127.0.0.1:5001`
+- backend desde Docker: `host.docker.internal:5001`
+
+Para agregar otro servicio, duplica su `upstream` y su `server`, cambia backend y puerto, y conserva el bloque de headers internos autenticados.
