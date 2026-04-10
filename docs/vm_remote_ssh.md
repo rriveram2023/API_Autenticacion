@@ -2,191 +2,86 @@
 
 ## Objetivo
 
-Trabajar directamente sobre la VM donde vive el despliegue para que:
+Trabajar directamente sobre la VM donde vive el despliegue real para que:
 
 - Git corra en la VM
 - Docker corra en la VM
 - VS Code abra la carpeta real del despliegue
 - Codex use ese mismo workspace remoto
 
-## Preparacion de la VM
-
-En la VM Windows Server instala o habilita:
-
-- Git
-- Docker Desktop o el engine de contenedores que vayas a operar
-- OpenSSH Server
-
-Si `OpenSSH Server` no esta instalado, intenta:
-
-```powershell
-Add-WindowsCapability -Online -Name OpenSSH.Server~~~~0.0.1.0
-```
-
-Verifica que el servicio SSH quede arriba:
-
-```powershell
-Get-Service sshd
-Start-Service sshd
-Set-Service -Name sshd -StartupType Automatic
-```
-
-Abre el puerto `22` en el firewall si aplica:
-
-```powershell
-New-NetFirewallRule -Name sshd -DisplayName "OpenSSH Server" -Enabled True -Direction Inbound -Protocol TCP -Action Allow -LocalPort 22
-```
-
-## Estructura recomendada en la VM
-
-Usa una ruta fija y facil de recordar:
+## Ruta real del proyecto
 
 ```text
-D:\Repos\API_Autenticacion
+C:\Apps\Autenticacion\API_Autenticacion
 ```
-
-Si el proxy frontal comun guarda certificados u otros artefactos propios, mantenlos fuera del repo, por ejemplo:
-
-```text
-D:\Infra\
-```
-
-## Clonar el repositorio en la VM
-
-Conectate por RDP o consola a la VM la primera vez y ejecuta:
-
-```powershell
-cd D:\
-mkdir Repos -ErrorAction SilentlyContinue
-cd D:\Repos
-git clone https://github.com/rriveram2023/API_Autenticacion.git
-cd .\API_Autenticacion
-Copy-Item .env.docker.example .env.docker
-```
-
-Despues completa `.env.docker` con los secretos reales del ambiente.
-
-## Conectar desde VS Code
-
-En tu equipo local:
-
-1. Instala la extension `Remote - SSH`.
-2. Abre la paleta de comandos.
-3. Ejecuta `Remote-SSH: Add New SSH Host`.
-4. Agrega una entrada como esta:
-
-```text
-Host vm-auth
-    HostName <ip-o-dns-de-la-vm>
-    User <tu-usuario>
-```
-
-5. Ejecuta `Remote-SSH: Connect to Host...`
-6. Elige `vm-auth`
-7. Abre la carpeta:
-
-```text
-D:\Repos\API_Autenticacion
-```
-
-## Como trabajar luego con Codex
-
-Una vez abierta la carpeta remota:
-
-- usa esa ventana remota de VS Code para editar
-- abre Codex en esa misma ventana
-- ejecuta `docker compose`, `git`, logs y validaciones desde esa ventana remota
-
-Asi Codex ve:
-
-- el repo real de la VM
-- los archivos `.env.docker` de ese ambiente
-- el estado real de los contenedores
-- los logs y puertos del servidor verdadero
 
 ## Operacion diaria en la VM
 
-Levantar:
+El unico compose soportado es `docker-compose.yml`.
+
+Levantar o actualizar:
 
 ```powershell
-docker compose -f docker-compose.vm-shared.yml --env-file .env.docker up -d --build
+cd C:\Apps\Autenticacion\API_Autenticacion
+docker compose -f docker-compose.yml --env-file .env.docker up -d --build
 ```
 
 Ver estado:
 
 ```powershell
-docker compose -f docker-compose.vm-shared.yml ps
+docker compose -f docker-compose.yml --env-file .env.docker ps
 ```
 
 Ver logs:
 
 ```powershell
-docker compose -f docker-compose.vm-shared.yml logs -f nginx
-docker compose -f docker-compose.vm-shared.yml logs -f oauth2-proxy
-docker compose -f docker-compose.vm-shared.yml logs -f auth-api
+docker compose -f docker-compose.yml --env-file .env.docker logs -f nginx
+docker compose -f docker-compose.yml --env-file .env.docker logs -f oauth2-proxy
+docker compose -f docker-compose.yml --env-file .env.docker logs -f auth-api
 ```
 
-Actualizar a la ultima version del repo:
+Recargar solo nginx despues de cambios de configuracion:
 
 ```powershell
-cd D:\Repos\API_Autenticacion
-git pull origin main
-docker compose -f docker-compose.vm-shared.yml --env-file .env.docker up -d --build
+docker exec api-autenticacion-nginx nginx -t
+docker exec api-autenticacion-nginx nginx -s reload
 ```
 
-## Validacion remota del stack compartido
-
-Una vez levantado el compose recomendado para VM compartida, valida desde la misma sesion remota:
+## Validacion remota minima
 
 ```powershell
-curl.exe -sS -i --max-time 10 http://localhost:8081/health
-curl.exe -sS -i --max-time 10 http://localhost:8081/auth/health
-curl.exe -sS -i --max-time 10 --max-redirs 0 http://localhost:8081/auth/session
-docker compose -f docker-compose.vm-shared.yml --env-file .env.docker logs --tail 50 nginx oauth2-proxy auth-api
+cd C:\Apps\Autenticacion\API_Autenticacion
+docker compose -f docker-compose.yml --env-file .env.docker config --quiet
+docker exec api-autenticacion-nginx nginx -t
+curl.exe -k -sS -i --max-time 10 https://localhost/health
+curl.exe -k -sS -i --max-time 10 https://localhost/auth/health
+curl.exe -k -sS -i --max-time 10 --max-redirs 0 https://localhost:4441/
 ```
 
-Criterio de exito esperado:
+Criterio esperado:
 
 - `GET /health` responde `200 OK`
 - `GET /auth/health` responde `200 OK`
-- `GET /auth/session` sin sesion responde `302` hacia `/oauth2/start?...`
-- los logs muestran:
-  - `nginx` publicando en `8081`
-  - `oauth2-proxy` respondiendo `401` en `/oauth2/auth` para usuarios sin sesion
-  - `auth-api` respondiendo `200` en `/health` y `/auth/health`
+- `GET /` en `4441` sin sesion responde `302` a `/oauth2/start?...`
+- despues de autenticacion, los logs deben mostrar `GET /oauth2/auth -> 202`
 
-## TLS y certificados en la VM compartida
+## Callback correcto para `4441`
 
-Para la variante `docker-compose.vm-shared.yml` recomendada en produccion compartida:
+La Redirect URI correcta en Entra ID es:
 
-- no copies `key`, `pem` ni certificados dentro de este repo
-- no montes certificados dentro de los contenedores de este stack
-- el TLS debe vivir en el proxy frontal compartido de la VM o de la infraestructura
-- este stack solo debe recibir trafico HTTP interno, por ejemplo `http://<host-vm>:8081`
-
-Solo si cambias a la variante con TLS dentro del stack (`docker-compose.yml`):
-
-- coloca los archivos de certificado en `nginx/certs/`
-- el contenedor `nginx` los monta en `/etc/nginx/certs`
-- el contenedor `auth-api` los monta en `/run/certs`
-- manten esos archivos fuera de Git
-
-Regla practica:
-
-- VM compartida en produccion: certificados fuera del repo y fuera de este compose
-- VM dedicada o laboratorio con TLS interno: certificados en `nginx/certs/` para el compose con `443`
-
-## Cambio de vm-shared a HTTPS directo
-
-Si migras desde `docker-compose.vm-shared.yml` al stack con TLS propio:
-
-```powershell
-docker compose -f docker-compose.vm-shared.yml --env-file .env.docker down
-docker compose -f docker-compose.yml --env-file .env.docker up -d --build
+```text
+https://e3display.com:4441/oauth2/callback
 ```
 
-No ejecutes ambas variantes al mismo tiempo:
+No uses `https://e3display.com/auth/callback` como URI principal para el listener `4441`.
 
-- reutilizan los mismos nombres de contenedor
-- la variante HTTPS directa necesita `80` y `443`
-- la variante compartida publica `8081` y deja TLS fuera del stack
+## Certificados
+
+Este repo termina TLS por si mismo, asi que los certificados reales deben existir en:
+
+```text
+C:\Apps\Autenticacion\API_Autenticacion\nginx\certs\fullchain.crt
+C:\Apps\Autenticacion\API_Autenticacion\nginx\certs\private.key
+```
+
+Esos archivos no deben subirse a Git.

@@ -1,63 +1,46 @@
 # API_Autenticacion
 
-Servicio de autenticacion para `e3display.com` basado en:
+Servicio de autenticacion para `e3display.com` basado en `FastAPI`, `oauth2-proxy` y `nginx`.
 
-- `FastAPI` para sesion, identidad y grupos
-- `oauth2-proxy` con proveedor `entra-id`
-- `nginx` como proxy de entrada y terminacion HTTPS o proxy interno, segun el modo de despliegue
+Este repo publica el frente HTTPS real del servicio y protege aplicaciones humanas adicionales mediante headers internos confiables reenviados por `nginx`.
 
-Este repositorio publica el frente de autenticacion y puede proteger rutas humanas de otros servicios que confien en los headers internos reenviados por `nginx`.
+## Modo soportado
 
-## Que resuelve
+El unico modo soportado por este repo es HTTPS directo en la misma VM con `docker-compose.yml`:
 
-- login humano con Microsoft Entra ID
-- sesion HTTP manejada por `oauth2-proxy`
-- endpoints para consultar sesion, identidad y grupos
-- enriquecimiento opcional desde Active Directory
-- despliegue tanto en Docker con HTTPS propio como en VM compartida detras de un proxy frontal
+- `443` para `https://e3display.com/`
+- `4441` para `https://e3display.com:4441/`
+- callback OAuth2 directo en `https://e3display.com:4441/oauth2/callback`
+
+La antigua variante `vm-shared` y sus puertos internos ya no forman parte del despliegue soportado.
 
 ## Componentes principales
 
 - `services/auth_api/app.py`: API principal y endpoints `/auth/*`
-- `services/auth_api/identity.py`: validacion de headers internos y enriquecimiento desde AD
-- `docker-compose.yml`: despliegue con HTTPS directo en `80/443`
-- `docker-compose.vm-shared.yml`: despliegue HTTP interno en `8081` para VM compartida
-- `nginx/conf/app.docker.conf`: `nginx` para HTTPS directo
-- `nginx/conf/app.docker.shared.conf`: `nginx` para VM compartida
-- `docs/vm_remote_ssh.md`: operacion remota desde VS Code
-- `docs/arquitectura.md`: vista de arquitectura por escenario
+- `services/auth_api/identity.py`: validacion de headers internos y enriquecimiento opcional desde AD
+- `docker-compose.yml`: despliegue Docker soportado
+- `nginx/conf/app.docker.conf`: `nginx` del despliegue real
+- `nginx/conf/app.conf`: variante local sin Docker
+- `docs/vm_remote_ssh.md`: operacion remota desde VS Code en la VM
+- `docs/arquitectura.md`: arquitectura soportada
 
 ## Flujo de autenticacion
 
-1. El usuario entra por `https://e3display.com`.
-2. `nginx` protege `/auth/` con `auth_request` hacia `oauth2-proxy`.
-3. Si no existe sesion, `nginx` redirige a `/oauth2/start`.
+1. El usuario entra por `https://e3display.com` o `https://e3display.com:4441`.
+2. `nginx` valida sesion con `auth_request` hacia `oauth2-proxy`.
+3. Si no hay sesion, `nginx` redirige a `/oauth2/start` conservando `scheme`, `host`, `puerto` y `request_uri`.
 4. `oauth2-proxy` autentica contra Microsoft Entra ID.
-5. Al regresar del callback, `nginx` reenvia al backend solo headers internos confiables.
-6. `Auth API` expone sesion, identidad y grupos; si hace falta, completa datos desde Active Directory.
+5. En `443`, `nginx` completa identidad mediante `/_auth/proxy-identity` y reenvia headers normalizados.
+6. En `4441`, `nginx` usa un flujo endurecido y directo con `auth_request /oauth2/auth` en cada request para priorizar estabilidad del listener productivo.
 
-Headers internos esperados:
+Headers internos hacia backends protegidos:
 
-- `X-Authenticated-User`: username corporativo limpio, priorizando `preferred_username` y con fallback a correo o claim opaco normalizado
+- `X-Authenticated-User`: username corporativo limpio
 - `X-Authenticated-Email`
 - `X-Authenticated-Groups`
-- `X-Authenticated-Display-Name`: nombre visible real si esta disponible; si no, username limpio
+- `X-Authenticated-Display-Name`
 - `X-Auth-Mfa-Policy`
 - `X-Internal-Proxy`
-
-## Endpoints principales
-
-- `GET /health`
-- `GET /auth/health`
-- `GET /auth/ad-health`
-- `GET /auth/login`
-- `GET /auth/callback`
-- `POST /auth/logout`
-- `GET /auth/session`
-- `GET /auth/me`
-- `GET /auth/groups`
-- `GET /auth/proxy-identity` (interno para `nginx`)
-- `GET /auth/docs`
 
 ## Variables de entorno importantes
 
@@ -74,8 +57,8 @@ Entra ID:
 - `OAUTH2_PROXY_CLIENT_ID`
 - `OAUTH2_PROXY_CLIENT_SECRET`
 - `OAUTH2_PROXY_COOKIE_SECRET`
-- `OAUTH2_PROXY_REDIRECT_URL`
-- `OAUTH2_PROXY_WHITELIST_DOMAINS`
+- `OAUTH2_PROXY_REDIRECT_URL=https://e3display.com:4441/oauth2/callback`
+- `OAUTH2_PROXY_WHITELIST_DOMAINS=e3display.com:*`
 
 Headers internos:
 
@@ -104,117 +87,57 @@ TLS:
 - `TLS_CERT_PATH`
 - `TLS_KEY_PATH`
 
-## Modos de despliegue
-
-### 1. HTTPS directo en este repo
-
-Usa este modo cuando el propio stack debe tomar `80/443` y terminar TLS.
-
-Archivos clave:
-
-- `docker-compose.yml`
-- `nginx/conf/app.docker.conf`
-- `nginx/certs/fullchain.crt`
-- `nginx/certs/private.key`
-
-Pasos:
+## Despliegue soportado
 
 1. Copia `.env.docker.example` a `.env.docker`.
 2. Completa secretos y datos de Entra ID.
 3. Coloca certificados reales en `nginx/certs/`.
-4. Levanta el stack:
+4. Levanta o actualiza el stack:
 
 ```powershell
 docker compose -f docker-compose.yml --env-file .env.docker up -d --build
 ```
 
-Validacion minima:
+## Validacion minima
 
 ```powershell
+docker compose -f docker-compose.yml --env-file .env.docker config --quiet
+docker exec api-autenticacion-nginx nginx -t
 curl.exe -k -sS -i --max-time 10 https://localhost/health
 curl.exe -k -sS -i --max-time 10 https://localhost/auth/health
-curl.exe -k -sS -i --max-time 10 --max-redirs 0 https://localhost/auth/session
+curl.exe -k -sS -i --max-time 10 --max-redirs 0 https://localhost:4441/
 ```
 
 Resultado esperado:
 
 - `https://localhost/health` -> `200 OK`
 - `https://localhost/auth/health` -> `200 OK`
-- `https://localhost/auth/session` sin sesion -> `302` a `/oauth2/start?...`
+- `https://localhost:4441/` sin sesion -> `302` a `/oauth2/start?...`
+- despues de login, `oauth2-proxy` debe registrar `GET /oauth2/auth -> 202`
 
-### 2. VM compartida con proxy frontal
+## Listener `4441` para E3 OS
 
-Usa este modo cuando otra capa de infraestructura ya recibe `80/443` y este repo solo debe publicarse internamente.
+`4441` queda reservado para aplicaciones humanas completas que no deben vivir bajo subpath.
 
-Archivos clave:
+Configuracion actual:
 
-- `docker-compose.vm-shared.yml`
-- `nginx/conf/app.docker.shared.conf`
+- servicio logico: `e3os_entraid`
+- URL publicada: `https://e3display.com:4441/`
+- callback OAuth2: `https://e3display.com:4441/oauth2/callback`
+- backend Docker endurecido: `192.168.2.31:5001`
+- backend local sin Docker: `127.0.0.1:5001`
 
-Pasos:
+Notas importantes:
 
-1. Copia `.env.docker.example` a `.env.docker`.
-2. Completa secretos y datos de Entra ID.
-3. Levanta el stack:
-
-```powershell
-docker compose -f docker-compose.vm-shared.yml --env-file .env.docker up -d --build
-```
-
-Validacion minima:
-
-```powershell
-curl.exe -sS -i --max-time 10 http://localhost:8081/health
-curl.exe -sS -i --max-time 10 http://localhost:8081/auth/health
-curl.exe -sS -i --max-time 10 --max-redirs 0 http://localhost:8081/auth/session
-```
-
-Resultado esperado:
-
-- `http://localhost:8081/health` -> `200 OK`
-- `http://localhost:8081/auth/health` -> `200 OK`
-- `http://localhost:8081/auth/session` sin sesion -> `302` a `/oauth2/start?...`
-
-## Operacion remota en la VM
-
-Si trabajas por `VS Code Remote SSH`:
-
-- Git corre en la VM
-- `docker compose` corre en la VM
-- logs, `exec`, `ps` y validaciones ocurren sobre el entorno real
-- Codex debe abrirse en esa misma ventana remota para compartir contexto con el despliegue activo
-
-Guia detallada:
-
-- `docs/vm_remote_ssh.md`
+- `4441` valida sesion en cada request con `auth_request /oauth2/auth`
+- `4441` conserva `Host` y `X-Forwarded-Host` con puerto incluido porque el flujo real depende de `:4441`
+- el loop `/menu -> /auth/login` pertenece a E3 OS, no a este stack
 
 ## Integracion con otros servicios
 
-Este servicio no se consume entrando al contenedor directamente. Se consume por su URL publicada o por el proxy frontal.
-
-Casos de uso:
-
-- navegador humano: entra por `https://e3display.com`
-- otra aplicacion web: reutiliza el patron `auth_request`
-- otro backend: consulta `/auth/session`, `/auth/me` o `/auth/groups` conservando cookies o headers del usuario
-- infraestructura compartida: consume el upstream HTTP interno definido en la arquitectura
-
-## Integracion con Folder API
-
-Este repo puede proteger rutas humanas de `CreacionCarpetasM`:
-
-- `GET /folders/create/browser`
-- `POST /folders/create`
-- `GET /folders/docs`
-- `GET /folders/openapi.json`
-
-En ese escenario:
-
-- `folder-api` sigue siendo un servicio separado
-- `nginx` exige sesion de usuario para las rutas humanas
-- `nginx` reenvia `X-Authenticated-*` y `X-Internal-Proxy`
-- la normalizacion de identidad ocurre en `auth-api` mediante el endpoint interno `GET /auth/proxy-identity`
-- `POST /folders/create/system` sigue fuera del flujo humano
+- `443` mantiene el flujo reusable basado en `/_auth/proxy-identity`
+- `Folder API` sigue protegido en `443`
+- futuros servicios humanos completos deben usar un listener dedicado como `4441`
 
 ## Documentacion complementaria
 
@@ -222,30 +145,3 @@ En ese escenario:
 - `docs/arquitectura.md`
 - `nginx/README.md`
 - `services/auth_api/README.md`
-## Servicios humanos protegidos reutilizables
-
-Este repo ya puede publicar servicios humanos adicionales detras del mismo patron de autenticacion sin obligarlos a vivir bajo un subpath.
-
-Patron recomendado:
-
-- crear un `upstream` dedicado por servicio
-- exponer un listener limpio y propio en `nginx`
-- proteger `location /` con `auth_request`
-- reenviar al backend los mismos headers `X-Authenticated-*` y `X-Internal-Proxy`
-- evitar subpaths cuando la app destino usa rutas absolutas o genera URLs propias
-
-Primer servicio reusable ya configurado:
-
-- nombre logico: `e3os_entraid`
-- backend local sin Docker: `127.0.0.1:5001`
-- backend en Docker o VM compartida: `host.docker.internal:5001`
-- listener HTTPS directo: `https://e3display.com:4441/`
-- listener interno para VM compartida: `http://<host-vm>:8088/`
-
-Como agregar un segundo servicio:
-
-1. copia el bloque `upstream` y el `server` de `e3os_entraid`
-2. cambia nombre logico y backend
-3. asigna un puerto de listener nuevo
-4. si estas en Docker, publica ese puerto en el `docker-compose` correspondiente
-5. conserva el mismo bloque de headers `X-Authenticated-*` y `X-Internal-Proxy`

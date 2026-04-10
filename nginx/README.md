@@ -1,88 +1,67 @@
 # nginx para API de autenticacion
 
-Este directorio contiene la publicacion HTTPS de `API_Autenticacion`.
+Este directorio contiene la publicacion HTTPS soportada de `API_Autenticacion`.
 
-## Componentes
+## Archivos activos
 
-- `nginx/conf/app.conf`: proxy de entrada principal para `e3display.com`
-- `nginx/conf/app.docker.conf`: proxy de entrada para despliegue con Docker Compose
-- `nginx/conf/app.docker.shared.conf`: proxy HTTP interno para VM compartida detras de un proxy frontal
-- `start_nginx.ps1`: localiza `nginx.exe`, prepara directorios temporales y levanta o recarga la configuracion
-- `start_oauth2_proxy.ps1`: arranca `oauth2-proxy` con proveedor `entra-id`
-- `start_auth_api.ps1`: arranca FastAPI en `127.0.0.1:8001`
-- `start_stack_entra.ps1`: arranque conjunto del stack de autenticacion
+- `nginx/conf/app.docker.conf`: configuracion del despliegue real con Docker
+- `nginx/conf/app.conf`: variante local sin Docker
+- `start_nginx.ps1`: arranque o recarga local de `nginx`
+- `start_oauth2_proxy.ps1`: arranque local de `oauth2-proxy`
+- `start_auth_api.ps1`: arranque local de FastAPI
+- `start_stack_entra.ps1`: arranque conjunto del stack local
 
 ## Runtime esperado
 
-- `API de autenticacion`: `127.0.0.1:8001`
+- `auth-api`: `127.0.0.1:8001`
 - `oauth2-proxy`: `127.0.0.1:4180`
-- `nginx`: `443` publico para `e3display.com`
+- `nginx`: `443` para `e3display.com`
+- `nginx`: `4441` para apps humanas completas publicadas por listener dedicado
 
-## Flujo HTTP
+## Flujo principal
 
 - `/oauth2/` se reenvia a `oauth2-proxy`
 - `/oauth2/auth` se usa como subrequest de validacion de sesion
-- `/auth/login` y `/auth/callback` pasan por `API de autenticacion`
-- `/auth/*` queda protegido con `auth_request`
-- `/health` publica la salud basica del backend de autenticacion
+- `/auth/*` en `443` sigue usando `/_auth/proxy-identity` para normalizar identidad reusable
+- `4441` usa un flujo mas simple con `auth_request /oauth2/auth` en cada request para priorizar estabilidad del listener productivo
 
 ## Entra ID
 
-Variables minimas requeridas en `.env`:
+Variables minimas requeridas:
 
 - `ENTRA_TENANT_ID`
 - `OAUTH2_PROXY_CLIENT_ID`
 - `OAUTH2_PROXY_CLIENT_SECRET`
 - `OAUTH2_PROXY_COOKIE_SECRET`
-- `OAUTH2_PROXY_REDIRECT_URL=https://e3display.com/auth/callback`
+- `OAUTH2_PROXY_REDIRECT_URL=https://e3display.com:4441/oauth2/callback`
 
-La app registrada en Entra ID debe aceptar exactamente:
+La Redirect URI registrada en Entra ID para el listener `4441` debe ser exactamente:
 
-- `https://e3display.com/auth/callback`
+- `https://e3display.com:4441/oauth2/callback`
 
 ## TLS
 
-La configuracion actual usa TLS en `443` y fuerza redireccion desde `80`.
+La configuracion soportada termina TLS en este mismo repo:
 
-Revisa que `nginx/conf/app.conf` apunte al certificado real:
+- `443` para `https://e3display.com`
+- `4441` para `https://e3display.com:4441`
 
-- `ssl_certificate`
-- `ssl_certificate_key`
-
-El `.env.example` tambien expone referencias utiles:
-
-- `TLS_CERT_PATH`
-- `TLS_KEY_PATH`
-- `PYTHON_EXE_PATH`
-- `NGINX_EXE_PATH`
-- `OAUTH2_PROXY_EXE_PATH`
-
-En Docker Compose, la configuracion equivalente vive en `.env.docker` y los certificados se montan en:
+En Docker Compose, los certificados se montan en:
 
 - `/etc/nginx/certs/fullchain.crt`
 - `/etc/nginx/certs/private.key`
 
-Para una VM compartida, la variante recomendada es no terminar TLS aqui. En ese caso:
-
-- `nginx/conf/app.docker.shared.conf` escucha solo HTTP interno
-- el stack se publica por ejemplo en `8081`
-- un proxy frontal comun del host o de la infraestructura recibe `80/443`
-
-## Variante trusted network
-
-Existe un ejemplo opcional en `nginx/conf/app_trusted_network.example.conf` para marcar:
-
-- `X-Auth-Mfa-Policy=trusted_network`
-
-Ese archivo sirve como referencia de una segunda entrada con politica distinta, pero este repositorio mantiene como foco el frente principal de autenticacion.
-
 ## Patron reusable para servicios humanos
 
-El servicio `e3os_entraid` queda como ejemplo base para publicar apps humanas nuevas sin subpath:
+`e3os_entraid` queda como servicio de referencia:
 
-- listener HTTPS directo: `4441`
-- listener interno para VM compartida: `8088`
+- listener HTTPS dedicado: `4441`
+- backend Docker endurecido: `192.168.2.31:5001`
 - backend local: `127.0.0.1:5001`
-- backend desde Docker: `host.docker.internal:5001`
 
-Para agregar otro servicio, duplica su `upstream` y su `server`, cambia backend y puerto, y conserva el bloque de headers internos autenticados.
+El listener dedicado debe:
+
+- vivir en raiz `/`
+- validar sesion con `auth_request /oauth2/auth`
+- reenviar `X-Authenticated-*` y `X-Internal-Proxy`
+- conservar `Host` con puerto cuando el callback dependa del listener especifico
