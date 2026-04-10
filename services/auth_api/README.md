@@ -26,12 +26,12 @@ Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frent
 - `GET /auth/session`
 - `GET /auth/me`
 - `GET /auth/groups`
-- `GET /auth/proxy-identity` (interno para `nginx` en `443`)
+- `GET /auth/proxy-identity` (interno para `nginx` en `443` y `4441`)
 - `GET /auth/docs`
 
 ## Notas operativas
 
 - el callback oficial del listener `4441` es `GET /oauth2/callback`
 - `GET /auth/callback` solo se mantiene por compatibilidad y no debe ser la Redirect URI principal en Entra ID para E3 OS
-- el listener `4441` usa validacion de sesion por request con `auth_request /oauth2/auth`
-- el enriquecimiento reusable via `GET /auth/proxy-identity` se mantiene para `443` y servicios ya publicados
+- el listener `4441` usa `auth_request /_auth/proxy-identity` para validar y completar identidad reusable por request
+- el enriquecimiento reusable via `GET /auth/proxy-identity` se mantiene para `443`, `4441` y servicios ya publicados

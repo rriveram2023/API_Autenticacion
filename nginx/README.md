@@ -23,7 +23,7 @@ Este directorio contiene la publicacion HTTPS soportada de `API_Autenticacion`.
 - `/oauth2/` se reenvia a `oauth2-proxy`
 - `/oauth2/auth` se usa como subrequest de validacion de sesion
 - `/auth/*` en `443` sigue usando `/_auth/proxy-identity` para normalizar identidad reusable
-- `4441` usa un flujo mas simple con `auth_request /oauth2/auth` en cada request para priorizar estabilidad del listener productivo
+- `4441` usa el subrequest reusable `/_auth/proxy-identity` para completar identidad y reenviarla al backend final
 
 ## Entra ID
 
@@ -62,6 +62,6 @@ En Docker Compose, los certificados se montan en:
 El listener dedicado debe:
 
 - vivir en raiz `/`
-- validar sesion con `auth_request /oauth2/auth`
+- validar sesion con `auth_request /_auth/proxy-identity`
 - reenviar `X-Authenticated-*` y `X-Internal-Proxy`
 - conservar `Host` con puerto cuando el callback dependa del listener especifico
