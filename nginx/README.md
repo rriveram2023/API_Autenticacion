@@ -23,7 +23,7 @@ Este directorio contiene la publicacion HTTPS soportada de `API_Autenticacion`.
 - `/oauth2/` se reenvia a `oauth2-proxy`
 - `/oauth2/auth` se usa como subrequest de validacion de sesion
 - `/auth/*` en `443` sigue usando `/_auth/proxy-identity` para normalizar identidad reusable
-- `4441` usa el subrequest reusable `/_auth/proxy-identity` para completar identidad y reenviarla al backend final
+- `4441` valida sesion con `auth_request /oauth2/auth`, normaliza identidad inline y reenvia `X-Authenticated-*` al backend final
 
 ## Entra ID
 
@@ -34,6 +34,7 @@ Variables minimas requeridas:
 - `OAUTH2_PROXY_CLIENT_SECRET`
 - `OAUTH2_PROXY_COOKIE_SECRET`
 - `OAUTH2_PROXY_REDIRECT_URL=https://e3display.com:4441/oauth2/callback`
+- `OAUTH2_PROXY_PROMPT=select_account`
 
 La Redirect URI registrada en Entra ID para el listener `4441` debe ser exactamente:
 
@@ -62,6 +63,12 @@ En Docker Compose, los certificados se montan en:
 El listener dedicado debe:
 
 - vivir en raiz `/`
-- validar sesion con `auth_request /_auth/proxy-identity`
+- validar sesion con `auth_request /oauth2/auth`
 - reenviar `X-Authenticated-*` y `X-Internal-Proxy`
 - conservar `Host` con puerto cuando el callback dependa del listener especifico
+## Logout federado
+
+- `/oauth2/sign_out` se intercepta antes de `oauth2-proxy` y pasa por `auth-api`
+- `auth-api` construye el redirect hacia `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/logout`
+- `oauth2-proxy` sigue limpiando su cookie local en `/oauth2/_proxy_sign_out`
+- el retorno post-logout vuelve a `/auth/login` y el siguiente login se solicita con `prompt=select_account`

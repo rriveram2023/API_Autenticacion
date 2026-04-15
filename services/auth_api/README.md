@@ -22,7 +22,7 @@ Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frent
 - `GET /auth/ad-health`
 - `GET /auth/login`
 - `GET /auth/callback`
-- `POST /auth/logout`
+- `GET /auth/logout` y `POST /auth/logout`
 - `GET /auth/session`
 - `GET /auth/me`
 - `GET /auth/groups`
@@ -33,5 +33,6 @@ Servicio FastAPI responsable de exponer sesion, identidad y grupos para el frent
 
 - el callback oficial del listener `4441` es `GET /oauth2/callback`
 - `GET /auth/callback` solo se mantiene por compatibilidad y no debe ser la Redirect URI principal en Entra ID para E3 OS
-- el listener `4441` usa `auth_request /_auth/proxy-identity` para validar y completar identidad reusable por request
+- el listener `4441` valida sesion con `auth_request /oauth2/auth`, normaliza identidad inline y reenvia `X-Authenticated-*` al backend final
 - el enriquecimiento reusable via `GET /auth/proxy-identity` se mantiene para `443`, `4441` y servicios ya publicados
+- `GET/POST /auth/logout` construye un logout federado hacia Entra y devuelve el navegador a `/auth/login` para relanzar el flujo con `prompt=select_account`

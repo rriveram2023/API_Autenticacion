@@ -207,9 +207,39 @@ def callback_login(code: str | None = Query(default=None), state: str | None = Q
     return RedirectResponse(url=f"/oauth2/callback{suffix}", status_code=302)
 
 
-@aplicacion.post("/auth/logout")
-def cerrar_sesion(rd: str = Query(default="/")) -> RedirectResponse:
-    return RedirectResponse(url=f"/oauth2/sign_out?{urlencode({'rd': rd})}", status_code=302)
+def _origen_publico(request: Request) -> str:
+    esquema = (request.headers.get("x-forwarded-proto") or request.url.scheme or "https").strip()
+    host = (request.headers.get("x-forwarded-host") or request.headers.get("host") or request.url.netloc).strip()
+    return f"{esquema}://{host}"
+
+
+def _absolutizar_destino_publico(request: Request, destino: str) -> str:
+    valor = (destino or "/").strip()
+    if valor.startswith(("http://", "https://")):
+        return valor
+    if not valor.startswith("/"):
+        valor = f"/{valor}"
+    return f"{_origen_publico(request)}{valor}"
+
+
+def _construir_logout_federado(request: Request, rd: str) -> str:
+    destino_final = _absolutizar_destino_publico(request, rd)
+    retorno_login = f"{_absolutizar_destino_publico(request, '/auth/login')}?{urlencode({'rd': destino_final})}"
+    tenant_id = os.getenv("ENTRA_TENANT_ID", "").strip()
+
+    if not tenant_id:
+        return f"/oauth2/_proxy_sign_out?{urlencode({'rd': retorno_login})}"
+
+    logout_entra = (
+        f"https://login.microsoftonline.com/{tenant_id}/oauth2/v2.0/logout?"
+        f"{urlencode({'post_logout_redirect_uri': retorno_login})}"
+    )
+    return f"/oauth2/_proxy_sign_out?{urlencode({'rd': logout_entra})}"
+
+
+@aplicacion.api_route("/auth/logout", methods=["GET", "POST"])
+def cerrar_sesion(request: Request, rd: str = Query(default="/")) -> RedirectResponse:
+    return RedirectResponse(url=_construir_logout_federado(request, rd), status_code=302)
 
 
 @aplicacion.get("/auth/proxy-identity")
@@ -310,3 +340,4 @@ def obtener_grupos_actuales(
 
 
 app = aplicacion
+

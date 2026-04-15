@@ -43,7 +43,9 @@ services:
       - --oidc-issuer-url=https://login.microsoftonline.com/${ENTRA_TENANT_ID}/v2.0
       - --entra-id-allowed-tenant=${ENTRA_TENANT_ID}
       - --skip-provider-button=true
+      - --prompt=${OAUTH2_PROXY_PROMPT:-select_account}
       - --whitelist-domain=${OAUTH2_PROXY_WHITELIST_DOMAINS}
+      - --whitelist-domain=login.microsoftonline.com:*
     expose:
       - "4180"
 
@@ -65,3 +67,4 @@ services:
       - ./nginx/certs:/etc/nginx/certs:ro
     extra_hosts:
       - "host.docker.internal:host-gateway"
+

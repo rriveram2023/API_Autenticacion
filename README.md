@@ -31,7 +31,7 @@ La antigua variante `vm-shared` y sus puertos internos ya no forman parte del de
 3. Si no hay sesion, `nginx` redirige a `/oauth2/start` conservando `scheme`, `host`, `puerto` y `request_uri`.
 4. `oauth2-proxy` autentica contra Microsoft Entra ID.
 5. En `443`, `nginx` completa identidad mediante `/_auth/proxy-identity` y reenvia headers normalizados.
-6. En `4441`, `nginx` usa el mismo subrequest reusable `/_auth/proxy-identity` para completar identidad y reenvia los headers `X-Authenticated-*` al backend final.
+6. En `4441`, `nginx` valida sesion con `auth_request /oauth2/auth`, normaliza identidad inline y reenvia los headers `X-Authenticated-*` al backend final.
 
 Headers internos hacia backends protegidos:
 
@@ -129,10 +129,16 @@ Configuracion actual:
 
 Notas importantes:
 
-- `4441` valida sesion en cada request usando `auth_request /_auth/proxy-identity`
+- `4441` valida sesion en cada request usando `auth_request /oauth2/auth`
 - `4441` conserva `Host` y `X-Forwarded-Host` con puerto incluido porque el flujo real depende de `:4441`
 - el loop `/menu -> /auth/login` pertenece a E3 OS, no a este stack
 
+## Logout federado
+
+- `GET /oauth2/sign_out` ya no vuelve directo a la app; primero pasa por `auth-api`
+- `auth-api` construye un logout federado hacia `https://login.microsoftonline.com/<tenant>/oauth2/v2.0/logout`
+- el retorno post-logout vuelve a `https://e3display.com:4441/auth/login?...`
+- el siguiente inicio usa `prompt=select_account` para evitar reentrada silenciosa al menu
 ## Integracion con otros servicios
 
 - `443` y `4441` mantienen el flujo reusable basado en `/_auth/proxy-identity`
